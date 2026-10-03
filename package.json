@@ -1,0 +1,13 @@
+{
+  "name": "po33-toolkit",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/dsp.test.js",
+    "test:ui": "node tests/ui.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.51.1"
+  }
+}

@@ -1,0 +1,83 @@
+name: Android APK
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  audio-and-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:ui
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-test-results
+          path: test-results/
+  build:
+    needs: audio-and-ui
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - run: ./gradlew assembleDebug lintDebug --no-daemon
+      - run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk dist/PO33-Toolkit.apk
+          cd dist
+          sha256sum PO33-Toolkit.apk > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PO33-Toolkit-APK
+          path: dist/
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-lint
+          path: app/build/reports/lint-results-debug.*
+  publish:
+    needs: build
+    if: github.event_name == 'push' && github.repository == 'arfipod/po-33_toolkit'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: PO33-Toolkit-APK
+          path: dist
+      - name: Publish installable APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TAG="$GITHUB_REF_NAME"
+            gh release create "$TAG" dist/* --verify-tag --title "PO-33 Toolkit $TAG" --notes-file RELEASE_NOTES.md
+          else
+            if ! gh release view latest >/dev/null 2>&1; then
+              gh release create latest --target "$GITHUB_SHA" --prerelease --title 'PO-33 Toolkit · latest' --notes-file RELEASE_NOTES.md
+            fi
+            gh release upload latest dist/* --clobber
+            gh release edit latest --notes-file RELEASE_NOTES.md
+          fi
