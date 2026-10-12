@@ -4,7 +4,7 @@ let sounds=Array(16).fill(null),selected=0,source=null,originalSource=null,sourc
 let clips=Array.from({length:4},(_,i)=>D.emptyClip('Clip '+String.fromCharCode(65+i))),clipIndex=0,bar=0;
 let transfer=null,audio=null,master=null,players=new Set(),fileAction=null,db=null,saveTimer=null,busy=false;
 let stopGeneration=0,playheadTimer=null,recordStarted=0,recordTimer=null;
-const padButtons=[],settings=['baseNote','root','scale','strength','targetNotes','slotSeconds','pitchMode','bpm','swing','chain','transferSlot','countdown','volume','projectName'];
+const padButtons=[],padVoices=Array.from({length:16},()=>new Set()),settings=['baseNote','root','scale','strength','targetNotes','slotSeconds','pitchMode','bpm','swing','chain','transferSlot','countdown','volume','projectName'];
 function status(text,error=false){$('status').textContent=text;$('status').classList.toggle('error',error);}
 async function guard(fn){try{await fn();}catch(e){console.error(e);status(e.message||String(e),true);}}
 function tab(id){document.querySelectorAll('.page').forEach(e=>e.classList.toggle('active',e.id===id));document.querySelectorAll('.tabs button').forEach(e=>e.classList.toggle('active',e.dataset.tab===id));window.scrollTo({top:0});}
@@ -12,7 +12,7 @@ document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>tab(b.dataset
 async function initAudio(){if(!audio){audio=new AudioContext({sampleRate:D.RATE});master=audio.createGain();master.gain.value=+$('volume').value;master.connect(audio.destination);}await audio.resume();return audio;}
 function buffer(data){const b=audio.createBuffer(1,data.length,D.RATE);b.copyToChannel(data,0);return b;}
 async function play(data,loop=false){if(!data?.length)throw Error('Primero carga o genera un sonido.');await initAudio();const s=audio.createBufferSource();s.buffer=buffer(data);s.loop=loop;s.connect(master);s.start();players.add(s);s.onended=()=>players.delete(s);return s;}
-function stop(){stopGeneration++;players.forEach(s=>{try{s.stop();}catch{}});players.clear();clearInterval(playheadTimer);playheadTimer=null;document.querySelectorAll('.playing,.playhead').forEach(e=>e.classList.remove('playing','playhead'));$('playClip').textContent='▶ Repetir clip';}
+function stop(){stopGeneration++;padVoices.forEach(voices=>voices.clear());players.forEach(s=>{try{s.stop();}catch{}});players.clear();clearInterval(playheadTimer);playheadTimer=null;document.querySelectorAll('.playing,.playhead').forEach(e=>e.classList.remove('playing','playhead'));$('playClip').textContent='▶ Repetir clip';}
 window.pauseApp=stop;window.nativeMessage=text=>status(text);
 function total(list=sounds){return list.reduce((sum,s)=>sum+(s?s.data.length/D.RATE:0),0);}
 function validateTotal(list){if(total(list)>40.001)throw Error('Los 16 pads superarían 40 s. Recorta muestras o usa posiciones más cortas.');}
@@ -23,7 +23,37 @@ function updatePads(){
   const s=sounds[selected];$('selectedLabel').textContent=`EDITOR · PAD ${String(selected+1).padStart(2,'0')}`;$('sampleName').value=s?.name||'';$('trimStart').value=0;$('trimEnd').value=s?(s.data.length/D.RATE).toFixed(3):0;wave($('waveform'),s?.data);
   const seconds=total();$('bankDuration').textContent=seconds.toFixed(1)+' / 40 s';$('title').textContent=s?.name||'ELIGE UN SONIDO';$('meta').textContent=s?`${(s.data.length/D.RATE).toFixed(2)} s · mono · 44,1 kHz`:'Importa, graba o carga un pack';$('number').textContent=String(selected+1).padStart(2,'0');$('memoryBar').style.width=`${seconds/40*100}%`;
 }
-for(let i=0;i<16;i++){const b=document.createElement('button');b.className='pad empty';b.type='button';b.innerHTML=`<span class="pad-kind">PAD</span><span class="pad-num">${String(i+1).padStart(2,'0')}</span><span class="pad-name">Vacío</span><canvas class="wave"></canvas>`;b.onclick=()=>guard(async()=>{selected=i;updatePads();if(sounds[i]){const src=await play(sounds[i].data);b.classList.add('playing');src.addEventListener('ended',()=>b.classList.remove('playing'));}});$('pads').append(b);padButtons.push(b);}
+// A pad is a one-shot voice: starting another pad must never stop the first one.
+async function triggerPad(i){
+  selected=i;
+  const sample=sounds[i];
+  if(sample){
+    const src=await play(sample.data);
+    const voices=padVoices[i];
+    voices.add(src);
+    padButtons[i].classList.add('playing');
+    src.addEventListener('ended',()=>{
+      voices.delete(src);
+      if(!voices.size)padButtons[i].classList.remove('playing');
+    });
+  }
+  // Schedule the audio before the expensive waveform/editor redraw.
+  updatePads();
+}
+for(let i=0;i<16;i++){
+  const b=document.createElement('button');
+  b.className='pad empty';b.type='button';
+  b.innerHTML=`<span class="pad-kind">PAD</span><span class="pad-num">${String(i+1).padStart(2,'0')}</span><span class="pad-name">Vacío</span><canvas class="wave"></canvas>`;
+  // Each finger receives its own pointerdown even while another finger stays down.
+  b.addEventListener('pointerdown',event=>{
+    if(event.button!==0)return; // Ignore right-click and other mouse buttons.
+    event.preventDefault(); // Prevent a second activation from a synthetic click.
+    guard(()=>triggerPad(i));
+  });
+  // Keyboard activation and assistive technologies emit a click without pointerdown.
+  b.addEventListener('click',event=>{if(event.detail===0)guard(()=>triggerPad(i));});
+  $('pads').append(b);padButtons.push(b);
+}
 function mustSample(){const s=sounds[selected];if(!s)throw Error('Carga primero un sonido en este pad.');return s;}
 function setPad(sample){const next=sounds.slice();next[selected]=sample;validateTotal(next);undo={index:selected,sample:sounds[selected]};sounds=next;invalidate();updatePads();renderSequencer();}
 function setSource(s){source=s.data.slice();originalSource=source.slice();sourceLabel=s.name;$('sourceName').textContent=s.name;wave($('sourceWave'),source);$('pitchInfo').textContent='Detecta la nota o escríbela manualmente.';scheduleSave();}
