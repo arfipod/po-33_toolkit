@@ -18,6 +18,35 @@ async function download(button,name){const pending=page.waitForEvent('download')
 try{
  await page.goto('http://127.0.0.1:'+server.address().port);await page.locator('#gameboy').click();await waitStatus('16 sonidos cargados');
  assert.equal(await page.locator('.pad:not(.empty)').count(),16);await noOverflow();await page.screenshot({path:'test-results/samples.png',fullPage:true});
+ // Real two-finger touch at once: both voices must start, not just the final click.
+ await page.evaluate(()=>{
+   window.__padStarts=[];
+   const original=AudioBufferSourceNode.prototype.start;
+   AudioBufferSourceNode.prototype.start=function(...args){
+     window.__padStarts.push(performance.now());
+     return original.apply(this,args);
+   };
+ });
+ await page.locator('.pad').first().scrollIntoViewIfNeeded();
+ const a=await page.locator('.pad').nth(0).boundingBox();
+ const b=await page.locator('.pad').nth(1).boundingBox();
+ assert.ok(a&&b,'Both pads must be visible for a two-finger test.');
+ const cdp=await context.newCDPSession(page);
+ await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[
+   {id:1,x:a.x+a.width/2,y:a.y+a.height/2},
+   {id:2,x:b.x+b.width/2,y:b.y+b.height/2}
+ ]});
+ try{
+   await page.waitForFunction(()=>window.__padStarts.length>=2);
+ }finally{
+   await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+ }
+ const starts=await page.evaluate(()=>window.__padStarts);
+ assert.equal(starts.length,2,'Two fingers must create exactly two voices, without click duplication.');
+ assert.ok(starts[1]-starts[0]<250,'Both pad sounds should start together.');
+ await page.locator('.pad').nth(2).focus();await page.keyboard.press('Enter');
+ await page.waitForFunction(()=>window.__padStarts.length===3);
+ await page.locator('#stop').click();
  await page.locator('.pad').first().click();await page.locator('#toTune').click();await page.locator('#detect').click();await waitStatus('Nota detectada. Puedes corregirla manualmente.');assert.equal(await page.locator('#baseNote').inputValue(),'C5');
  await page.locator('#eightPreset').click();await page.locator('#generate').click();await waitStatus('Banco generado');
  await page.locator('[data-tab=export]').click();const wav=await download('#saveTransfer','bank.wav');assert.equal(wav.readUInt32LE(40),16*44100*2);assert.equal(wav.subarray(44+8*44100*2).some(v=>v!==0),false,'Second half must be silent');
@@ -28,5 +57,5 @@ try{
  await page.waitForTimeout(800);await page.reload();await waitStatus('Sesión anterior recuperada.');assert.equal(await page.locator('.pad:not(.empty)').count(),16);
  await page.locator('[data-tab=export]').click();const fc=page.waitForEvent('filechooser');await page.locator('#restore').click();await(await fc).setFiles('test-results/project.po33.json');await waitStatus('Proyecto restaurado');
  await page.setViewportSize({width:360,height:740});for(const id of ['board','tune','compose','export']){await page.locator(`[data-tab=${id}]`).click();await noOverflow();}
- assert.deepEqual(errors,[]);console.log('UI passed: packs, pitch detection, bank generation, silent slots, WAV/map, clip playback/export, project round trip, autosave, 360/412px layout.');
+ assert.deepEqual(errors,[]);console.log('UI passed: multitouch polyphonic pads, keyboard input, packs, pitch detection, bank generation, silent slots, WAV/map, clip playback/export, project round trip, autosave, 360/412px layout.');
 }finally{await browser.close();server.close();}
