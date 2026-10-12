@@ -16,7 +16,7 @@ Estudio Android offline basado en el Sample Board original: importa, graba, afin
 
 ## Qué incluye
 
-**Samples.** 16 pads, ZIP con nombres `01_nombre.wav`…`16_nombre.wav`, archivos de audio decodificables por WebView (WAV recomendado), micrófono, forma de onda, nombre, recorte, normalización, invertir, deshacer una edición y exportar WAV. Packs Game Boy y Warm Synth suministrados por el propietario incluidos. Warm Synth se divide en 16 partes iguales; sus acordes se conservan sin asumir nombres que el WAV no contiene.
+**Samples.** 16 pads polifónicos: toca dos o más simultáneamente con varios dedos (también con ratón o teclado), con reproducción independiente que no corta otras voces. ZIP con nombres `01_nombre.wav`…`16_nombre.wav`, archivos de audio decodificables por WebView (WAV recomendado), micrófono, forma de onda, nombre, recorte, normalización, invertir, deshacer una edición y exportar WAV. Packs Game Boy y Warm Synth suministrados por el propietario incluidos. Warm Synth se divide en 16 partes iguales; sus acordes se conservan sin asumir nombres que el WAV no contiene.
 
 **Afinación.** Detección de nota y cents, nota original manual, corrección offline cromática/mayor/menor con intensidad, original recuperable y envío al pad. Generador de 1–16 notas o acordes, silencios y dos modos de transposición: sampler (velocidad/duración variable) y duración fija (síntesis sincronizada al período). La afinación trabaja con una voz/nota monofónica; no es separación de fuentes, afinación polifónica ni Auto-Tune comercial. Puede producir artefactos; no garantiza conservación de formantes. Para ruido, percusión y acordes ya grabados usa Sampler.
 
